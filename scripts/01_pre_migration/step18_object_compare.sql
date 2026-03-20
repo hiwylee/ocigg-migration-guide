@@ -1,0 +1,133 @@
+-------------------------------------------------------------------------------
+-- step18_object_compare.sql — 오브젝트 완전성 전수 비교 (STEP 18)
+-- 실행 환경: [소스] + [타겟]
+-- 접속 정보 (소스): ${SRC_DBA_USER}/${SRC_DBA_PASS}@${SRC_TNS}
+-- 접속 정보 (타겟): ${TGT_DBA_USER}/${TGT_DBA_PASS}@${TGT_TNS}
+-- 목적: 소스의 모든 오브젝트가 타겟에 빠짐없이 생성되었는지 확인
+-- 담당: 소스 DBA + 타겟 DBA
+-- 실행 방법: 소스/타겟에서 각각 실행 후 결과를 오브젝트 완전성 매트릭스에 기록
+-------------------------------------------------------------------------------
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+SET PAGESIZE 1000
+SET LINESIZE 300
+SET TRIMSPOOL ON
+SET FEEDBACK ON
+SET HEADING ON
+SET COLSEP '|'
+
+SPOOL logs/step18_object_compare.log
+
+PROMPT =============================================
+PROMPT [18-1] OBJECT_TYPE별 수량 비교
+PROMPT ※ 소스/타겟 각각 실행
+PROMPT =============================================
+
+SELECT OBJECT_TYPE, COUNT(*) AS CNT
+FROM DBA_OBJECTS
+WHERE OWNER NOT IN (
+    'SYS','SYSTEM','OUTLN','DBSNMP','APPQOSSYS','AUDSYS','CTXSYS',
+    'DBSFWUSER','DVSYS','EXFSYS','GGSYS','GSMADMIN_INTERNAL','LBACSYS',
+    'MDSYS','OJVMSYS','OLAPSYS','ORDDATA','ORDSYS','WMSYS','XDB','XS$NULL'
+)
+AND OBJECT_TYPE NOT IN ('JAVA CLASS','JAVA DATA','JAVA RESOURCE')
+GROUP BY OBJECT_TYPE
+ORDER BY OBJECT_TYPE;
+
+PROMPT =============================================
+PROMPT [18-2] 인덱스 상세 비교
+PROMPT =============================================
+
+PROMPT --- 인덱스 전체 목록 (INVISIBLE 포함) ---
+
+SELECT OWNER, INDEX_NAME, TABLE_NAME, INDEX_TYPE,
+       UNIQUENESS, STATUS, VISIBILITY, PARTITIONED
+FROM DBA_INDEXES
+WHERE OWNER NOT IN (
+    'SYS','SYSTEM','OUTLN','DBSNMP','APPQOSSYS','AUDSYS','CTXSYS',
+    'MDSYS','OJVMSYS','OLAPSYS','ORDDATA','ORDSYS','WMSYS','XDB'
+)
+ORDER BY OWNER, TABLE_NAME, INDEX_NAME;
+
+PROMPT --- Function-Based Index(FBI) 표현식 ---
+
+SELECT INDEX_OWNER, INDEX_NAME, TABLE_NAME,
+       COLUMN_POSITION, COLUMN_EXPRESSION
+FROM DBA_IND_EXPRESSIONS
+WHERE INDEX_OWNER NOT IN (
+    'SYS','SYSTEM','OUTLN','DBSNMP','APPQOSSYS','AUDSYS','CTXSYS',
+    'MDSYS','OJVMSYS','OLAPSYS','ORDDATA','ORDSYS','WMSYS','XDB'
+)
+ORDER BY INDEX_OWNER, INDEX_NAME, COLUMN_POSITION;
+
+PROMPT --- 파티션 인덱스 (LOCAL/GLOBAL) ---
+
+SELECT INDEX_OWNER, INDEX_NAME, TABLE_NAME,
+       PARTITIONING_TYPE, LOCALITY, ALIGNMENT
+FROM DBA_PART_INDEXES
+WHERE INDEX_OWNER NOT IN (
+    'SYS','SYSTEM','OUTLN','DBSNMP','APPQOSSYS','AUDSYS','CTXSYS',
+    'MDSYS','OJVMSYS','OLAPSYS','ORDDATA','ORDSYS','WMSYS','XDB'
+)
+ORDER BY INDEX_OWNER, INDEX_NAME;
+
+PROMPT =============================================
+PROMPT [18-3] 제약조건 비교
+PROMPT =============================================
+
+SELECT CONSTRAINT_TYPE, STATUS, COUNT(*) AS CNT
+FROM DBA_CONSTRAINTS
+WHERE OWNER NOT IN (
+    'SYS','SYSTEM','OUTLN','DBSNMP','APPQOSSYS','AUDSYS','CTXSYS',
+    'MDSYS','OJVMSYS','OLAPSYS','ORDDATA','ORDSYS','WMSYS','XDB'
+)
+AND CONSTRAINT_TYPE IN ('P','R','U','C')
+GROUP BY CONSTRAINT_TYPE, STATUS
+ORDER BY CONSTRAINT_TYPE, STATUS;
+
+PROMPT =============================================
+PROMPT [18-4] 시퀀스 속성 비교
+PROMPT =============================================
+
+SELECT SEQUENCE_OWNER, SEQUENCE_NAME,
+       MIN_VALUE, MAX_VALUE, INCREMENT_BY,
+       CYCLE_FLAG, ORDER_FLAG, CACHE_SIZE
+FROM DBA_SEQUENCES
+WHERE SEQUENCE_OWNER NOT IN (
+    'SYS','SYSTEM','OUTLN','DBSNMP','APPQOSSYS','AUDSYS','CTXSYS',
+    'MDSYS','OJVMSYS','OLAPSYS','ORDDATA','ORDSYS','WMSYS','XDB'
+)
+ORDER BY SEQUENCE_OWNER, SEQUENCE_NAME;
+
+PROMPT =============================================
+PROMPT [18-5] 사용자/Profile/권한 비교
+PROMPT =============================================
+
+PROMPT --- 사용자 목록 ---
+
+SELECT USERNAME, ACCOUNT_STATUS, PROFILE
+FROM DBA_USERS
+WHERE USERNAME NOT IN (
+    'SYS','SYSTEM','OUTLN','DBSNMP','APPQOSSYS','AUDSYS','CTXSYS',
+    'DBSFWUSER','DVSYS','EXFSYS','GGSYS','GSMADMIN_INTERNAL','GSMCATUSER',
+    'GSMUSER','LBACSYS','MDSYS','OJVMSYS','OLAPSYS','ORACLE_OCM','ORDDATA',
+    'ORDPLUGINS','ORDSYS','REMOTE_SCHEDULER_AGENT','SI_INFORMTN_SCHEMA',
+    'SYS$UMF','SYSBACKUP','SYSDG','SYSKM','SYSRAC','WMSYS','XDB','XS$NULL',
+    'GGADMIN','MIGRATION_USER'
+)
+ORDER BY USERNAME;
+
+PROMPT --- Profile 목록 비교 ---
+
+SELECT PROFILE, RESOURCE_NAME, LIMIT
+FROM DBA_PROFILES
+WHERE PROFILE NOT IN ('DEFAULT','ORA_STIG_PROFILE')
+ORDER BY PROFILE, RESOURCE_NAME;
+
+PROMPT =============================================
+PROMPT STEP 18 오브젝트 완전성 전수 비교 완료
+PROMPT ※ 불일치 항목 발견 시: 누락 오브젝트 DDL을
+PROMPT   소스에서 추출하여 타겟에 수동 생성 후 재확인
+PROMPT =============================================
+
+SPOOL OFF
+EXIT
