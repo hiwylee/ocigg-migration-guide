@@ -40,6 +40,15 @@ USERIDALIAS ggadmin_src DOMAIN OracleGoldenGate
 EXTTRAIL ./dirdat/aa
 SOURCETIMEZONE +09:00
 
+-- UPDATE Trail 레코드에 Supplemental Log 컬럼의 before image 전체 포함
+-- PK 없는 테이블 충돌 방지 및 HANDLECOLLISIONS 사용 시 필수
+LOGALLSUPCOLS
+
+-- UPDATE Trail 레코드를 변경된 컬럼만 포함하는 compact 형식으로 기록
+-- Trail 크기 절감 및 AWS→OCI 광역 구간 네트워크 부하 감소 목적
+-- LOGALLSUPCOLS와 조합: before image는 전체 유지, after image는 compact화
+UPDATERECORDFORMAT COMPACT
+
 -- SE 제약: 지원 범위 내 DDL 복제만 설정
 DDL INCLUDE MAPPED OBJTYPE 'TABLE' OPTYPE CREATE, ALTER, DROP, TRUNCATE
 
@@ -65,8 +74,13 @@ TABLEEXCLUDE ORDSYS.*;
 TABLEEXCLUDE WMSYS.*;
 TABLEEXCLUDE XDB.*;
 -- GoldenGate 자체 스키마 반드시 제외
+-- (checkpoint 테이블, heartbeat 테이블, temp 작업 테이블 포함)
 TABLEEXCLUDE GGADMIN.*;
 TABLEEXCLUDE GGS_TEMP.*;
+-- OCI GG Managed Service 내부 오브젝트 제외
+-- C##GGADMIN, GGSYS 등 OCI GG가 타겟 DB에 생성하는 checkpoint 스키마
+TABLEEXCLUDE C##GGADMIN.*;
+TABLEEXCLUDE GGTEST.*;
 
 -- 전체 사용자 스키마 복제 (와일드카드)
 TABLE *.*;
@@ -87,6 +101,9 @@ echo "주의사항:" | tee -a "$LOG"
 echo "  - XMLTYPE Object-Relational 방식 테이블 존재 시 해당 테이블 TABLEEXCLUDE 추가 필요" | tee -a "$LOG"
 echo "  - SE 환경에서 GG DDL 복제는 지원 범위가 제한됨" | tee -a "$LOG"
 echo "  - 미지원 DDL 발생 시 수동 처리 절차 별도 수립" | tee -a "$LOG"
+echo "  - LOGALLSUPCOLS: Supplemental Log 컬럼 before image 전체 기록 — PK 없는 테이블 충돌 방지" | tee -a "$LOG"
+echo "  - UPDATERECORDFORMAT COMPACT: Trail 크기 절감 — 광역(AWS→OCI) 구간 네트워크 최적화" | tee -a "$LOG"
+echo "  - OCI GG Managed Service checkpoint 스키마(C##GGADMIN, GGTEST) TABLEEXCLUDE 적용 확인" | tee -a "$LOG"
 
 ###############################################################################
 # 4-3. Extract 파라미터 검증
@@ -111,7 +128,10 @@ echo "--- 4-4. 결과 요약 ---" | tee -a "$LOG"
 echo "  - ADD EXTRACT ${GG_EXTRACT_NAME} 등록 확인" | tee -a "$LOG"
 echo "  - ADD EXTTRAIL 등록 확인" | tee -a "$LOG"
 echo "  - 파라미터 파일 저장 확인" | tee -a "$LOG"
+echo "  - LOGALLSUPCOLS 설정 확인" | tee -a "$LOG"
+echo "  - UPDATERECORDFORMAT COMPACT 설정 확인" | tee -a "$LOG"
 echo "  - TABLEEXCLUDE 시스템 스키마 전체 포함 확인" | tee -a "$LOG"
+echo "  - TABLEEXCLUDE OCI GG checkpoint 스키마(C##GGADMIN, GGTEST) 포함 확인" | tee -a "$LOG"
 echo "  - TABLE *.* / SEQUENCE *.* 설정 확인" | tee -a "$LOG"
 echo "" | tee -a "$LOG"
 echo "완료 시각: $(date '+%Y-%m-%d %H:%M:%S')" | tee -a "$LOG"
