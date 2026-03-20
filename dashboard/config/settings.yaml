@@ -1,0 +1,30 @@
+app:
+  name: "Migration Dashboard"
+  version: "1.0.0"
+
+migration:
+  source: "AWS RDS Oracle SE (ap-northeast-1)"
+  target: "OCI DBCS Oracle SE (ap-tokyo-1)"
+  phases: 9
+  lag_threshold_seconds: 30
+  lag_stabilization_hours: 24
+  rollback_retain_days: 14
+  cutover_timeout_minutes: 30
+
+scheduler:
+  lag_poll_interval_seconds: 300   # 5분
+  health_check_interval_seconds: 30
+
+validation:
+  total_items: 136
+  domains:
+    - name: "01_GG_Process"
+      count: 28
+    - name: "02_Static_Schema"
+      count: 38
+    - name: "03_Data_Validation"
+      count: 25
+    - name: "04_Special_Objects"
+      count: 42
+    - name: "05_Migration_Caution"
+      count: 26
