@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS validation_results (
     item_name       TEXT    NOT NULL,
     priority        TEXT    NOT NULL DEFAULT 'MEDIUM',
     status          TEXT    NOT NULL DEFAULT 'PENDING',
+    method          TEXT,
     note            TEXT,
     assignee        TEXT,
     verified_at     TEXT,
@@ -143,6 +144,12 @@ async def init_db(admin_username: str, admin_password: str) -> None:
     async with aiosqlite.connect(get_db_path()) as db:
         db.row_factory = aiosqlite.Row
         await db.executescript(CREATE_TABLES_SQL)
+
+        # migrate: add method column if missing
+        cols = [r[1] for r in await (await db.execute("PRAGMA table_info(validation_results)")).fetchall()]
+        if "method" not in cols:
+            await db.execute("ALTER TABLE validation_results ADD COLUMN method TEXT")
+            await db.commit()
 
         for phase_no, phase_name, status in PHASE_SEED:
             await db.execute(

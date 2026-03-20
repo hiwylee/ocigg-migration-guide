@@ -19,6 +19,7 @@ interface ValidationItem {
   item_name: string;
   priority: VPriority;
   status: VStatus;
+  method: string | null;
   note: string | null;
   assignee: string | null;
   verified_at: string | null;
@@ -204,7 +205,7 @@ function ItemRow({ item, onUpdate }: ItemRowProps) {
       )}
     >
       <div className="flex items-start gap-3 px-4 py-2.5">
-        {/* No + Name */}
+        {/* No + Name + Method */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-slate-500 text-xs font-mono w-6 shrink-0">
@@ -213,6 +214,14 @@ function ItemRow({ item, onUpdate }: ItemRowProps) {
             <span className="text-slate-200 text-sm">{item.item_name}</span>
             <PriorityBadge priority={item.priority} />
           </div>
+          {/* Method (검증방법) */}
+          {item.method && (
+            <div className="mt-0.5 ml-8">
+              <span className="inline-block text-[11px] text-cyan-400 bg-cyan-950/50 border border-cyan-800/40 rounded px-1.5 py-0.5">
+                {item.method}
+              </span>
+            </div>
+          )}
           {/* Note preview */}
           {item.note && !showNote && (
             <div className="mt-1 text-xs text-slate-500 ml-8 truncate">
