@@ -8,6 +8,7 @@ from core.scheduler import start_scheduler, stop_scheduler, setup_jobs
 from api import auth, config, events, scripts, runbook, database
 from api import goldengate
 from api import validation
+from api import alerts, cutover, users
 from api.validation import seed_validation_data
 
 
@@ -44,6 +45,9 @@ app.include_router(scripts.router,    prefix="/api/scripts", tags=["scripts"])
 app.include_router(runbook.router,    prefix="/api/runbook", tags=["runbook"])
 app.include_router(database.router,  prefix="/api/db",      tags=["database"])
 app.include_router(validation.router, prefix="/api/validation", tags=["validation"])
+app.include_router(alerts.router,    prefix="/api/alerts",     tags=["alerts"])
+app.include_router(cutover.router,   prefix="/api/cutover",    tags=["cutover"])
+app.include_router(users.router,     prefix="/api/users",      tags=["users"])
 
 
 @app.get("/health", tags=["system"])

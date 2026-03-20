@@ -190,6 +190,49 @@ async def list_scripts(
     return _build_script_list(phase=phase, role=role, risk=risk, last_runs=last_runs)
 
 
+@router.get("/runs")
+async def all_runs(
+    limit: int = Query(100, le=500),
+    status: Optional[str] = Query(None),
+    db: aiosqlite.Connection = Depends(get_db),
+    _: UserInfo = Depends(get_current_user),
+):
+    """전체 스크립트 실행 이력 (최신순)"""
+    conditions = []
+    params: list = []
+    if status:
+        conditions.append("status=?")
+        params.append(status)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.append(limit)
+    rows = await (
+        await db.execute(
+            f"SELECT * FROM script_runs {where} ORDER BY id DESC LIMIT ?", params
+        )
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.get("/runs/{run_id}/log")
+async def get_run_log(
+    run_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    _: UserInfo = Depends(get_current_user),
+):
+    """실행 이력의 로그 파일 내용 조회"""
+    row = await (
+        await db.execute("SELECT log_path FROM script_runs WHERE id=?", (run_id,))
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="실행 이력을 찾을 수 없습니다")
+    log_path = row["log_path"]
+    if not log_path or not Path(log_path).exists():
+        return {"content": ""}
+    # 최대 200KB만 반환
+    content = Path(log_path).read_text(errors="replace")[-200_000:]
+    return {"content": content}
+
+
 @router.get("/{script_id}")
 async def get_script(
     script_id: str,

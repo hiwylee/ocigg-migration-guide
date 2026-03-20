@@ -10,10 +10,10 @@ services:
     env_file:
       - .env
     volumes:
-      - ./db:/app/db
-      - ../scripts:/app/scripts:ro
-      - ../plan:/app/plan:ro
-      - ../docs:/app/docs:ro
+      - ./db:/app/db:Z
+      - ../scripts:/app/scripts:ro,Z
+      - ../plan:/app/plan:ro,Z
+      - ../docs:/app/docs:ro,Z
     restart: unless-stopped
     networks:
       - dashboard

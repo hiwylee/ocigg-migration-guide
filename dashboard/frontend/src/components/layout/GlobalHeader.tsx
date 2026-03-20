@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Circle } from "lucide-react";
+import { Bell, Circle, LayoutGrid } from "lucide-react";
 import { useAuthStore } from "../../store/authStore";
 import api from "../../hooks/useApi";
 import type { GGStatus, GoNogo, ValidationSummary } from "../../types";
 import { cn } from "../../lib/utils";
 import GoNoBadge from "../GoNoBadge";
+import DDayLayout from "../DDayLayout";
 
 interface GGLight {
   name: string;
@@ -27,7 +28,8 @@ export default function GlobalHeader() {
   const [ggLights] = useState<GGLight[]>(
     GG_NAMES.map((name) => ({ name, status: "UNKNOWN" as GGStatus }))
   );
-  const [alertCount] = useState(0);
+  const [alertCount, setAlertCount] = useState(0);
+  const [ddayMode, setDdayMode] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Fetch current phase
@@ -57,8 +59,15 @@ export default function GlobalHeader() {
         .catch(() => {});
     };
 
+    const fetchAlerts = () => {
+      api.get<{ id: number }[]>("/alerts", { params: { unconfirmed_only: "true", limit: "50" } })
+        .then((res) => setAlertCount(res.data.length))
+        .catch(() => {});
+    };
+
     fetchGoNogo();
-    pollingRef.current = setInterval(fetchGoNogo, 30_000);
+    fetchAlerts();
+    pollingRef.current = setInterval(() => { fetchGoNogo(); fetchAlerts(); }, 30_000);
 
     return () => {
       if (pollingRef.current !== null) {
@@ -69,6 +78,8 @@ export default function GlobalHeader() {
   }, [user]);
 
   return (
+    <>
+    {ddayMode && <DDayLayout onClose={() => setDdayMode(false)} />}
     <header className="flex items-center justify-between px-4 py-2 bg-slate-800 border-b border-slate-700 shrink-0 z-10">
       {/* Left: title + Phase */}
       <div className="flex items-center gap-4">
@@ -100,9 +111,18 @@ export default function GlobalHeader() {
         ))}
       </div>
 
-      {/* Right: Go/No-Go badge + alerts + user */}
+      {/* Right: Go/No-Go badge + D-Day + alerts + user */}
       <div className="flex items-center gap-3">
         <GoNoBadge goNogo={goNogo} size="sm" showLabel />
+
+        <button
+          onClick={() => setDdayMode(true)}
+          className="flex items-center gap-1.5 px-2 py-1 bg-amber-600/20 hover:bg-amber-600/40 border border-amber-600/50 text-amber-400 text-xs rounded transition-colors"
+          title="D-Day 4분할 모드"
+        >
+          <LayoutGrid className="w-3.5 h-3.5" />
+          D-Day
+        </button>
 
         <button className="relative text-slate-400 hover:text-white transition">
           <Bell className="w-5 h-5" />
@@ -126,5 +146,6 @@ export default function GlobalHeader() {
         </button>
       </div>
     </header>
+    </>
   );
 }
