@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { marked } from "marked";
 import {
   BookOpen,
   CheckCircle2,
@@ -34,99 +33,148 @@ interface WarningItem {
   text: string;
 }
 
-// ─── Markdown renderer setup ─────────────────────────────────────────────────
+// ─── Simple CSP-safe markdown renderer (eval 없음) ───────────────────────────
 
-const renderer = new marked.Renderer();
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
-renderer.heading = ({ text, depth }: { text: string; depth: number }) => {
-  const slug = text
+function slugify(text: string): string {
+  return text
     .toLowerCase()
     .replace(/[^\w\s-]/g, "")
     .replace(/[\s_]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
-  if (depth === 2) {
-    return `<h2 id="step-${slug}" class="md-h2 text-blue-400 text-lg font-semibold mt-8 mb-3 pb-2 border-b border-slate-700">${text}</h2>`;
+}
+
+function renderMarkdown(md: string): string {
+  const lines = md.split("\n");
+  const out: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code block
+    if (line.startsWith("```")) {
+      const lang = line.slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      const raw = codeLines.join("\n");
+      const escaped = escapeHtml(raw);
+      out.push(
+        `<pre class="md-pre bg-slate-900 border border-slate-600 rounded p-3 font-mono text-sm overflow-x-auto my-3 relative group" data-code="${encodeURIComponent(raw)}">` +
+        `<code class="text-green-400${lang ? " language-" + lang : ""}">${escaped}</code></pre>`
+      );
+      i++;
+      continue;
+    }
+
+    // Headings
+    const h = line.match(/^(#{1,6})\s+(.+)/);
+    if (h) {
+      const depth = h[1].length;
+      const text = h[2];
+      const slug = slugify(text);
+      if (depth === 2) {
+        out.push(`<h2 id="step-${slug}" class="md-h2 text-blue-400 text-lg font-semibold mt-8 mb-3 pb-2 border-b border-slate-700">${text}</h2>`);
+      } else if (depth === 3) {
+        out.push(`<h3 class="md-h3 text-slate-300 font-medium mt-5 mb-2">${text}</h3>`);
+      } else {
+        out.push(`<h${depth} class="text-slate-200 font-semibold mt-4 mb-2">${text}</h${depth}>`);
+      }
+      i++;
+      continue;
+    }
+
+    // Blockquote
+    if (line.startsWith("> ")) {
+      const text = renderInline(line.slice(2));
+      out.push(`<blockquote class="border-l-4 border-amber-500 pl-4 py-1 my-3 text-amber-300 bg-amber-500/5 rounded-r">${text}</blockquote>`);
+      i++;
+      continue;
+    }
+
+    // Horizontal rule
+    if (/^---+$/.test(line.trim())) {
+      out.push(`<hr class="border-slate-700 my-4" />`);
+      i++;
+      continue;
+    }
+
+    // Table (simple)
+    if (line.includes("|") && i + 1 < lines.length && lines[i + 1].includes("---")) {
+      const headers = line.split("|").filter((c) => c.trim()).map((c) => c.trim());
+      i += 2; // skip separator
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i].includes("|")) {
+        rows.push(lines[i].split("|").filter((c) => c.trim()).map((c) => c.trim()));
+        i++;
+      }
+      const thead = `<tr class="border-b border-slate-600">${headers.map((h) => `<th class="text-slate-400 font-medium px-3 py-2 text-left">${escapeHtml(h)}</th>`).join("")}</tr>`;
+      const tbody = rows.map((r) =>
+        `<tr class="border-b border-slate-700 hover:bg-slate-800/50">${r.map((c) => `<td class="text-slate-300 px-3 py-2">${renderInline(c)}</td>`).join("")}</tr>`
+      ).join("");
+      out.push(`<div class="overflow-x-auto my-4"><table class="w-full text-sm border-collapse border border-slate-600"><thead class="bg-slate-800">${thead}</thead><tbody>${tbody}</tbody></table></div>`);
+      continue;
+    }
+
+    // Unordered list
+    if (/^[-*+]\s/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^[-*+]\s/.test(lines[i])) {
+        items.push(`<li class="text-slate-300 pl-2">${renderInline(lines[i].slice(2))}</li>`);
+        i++;
+      }
+      out.push(`<ul class="list-disc list-inside space-y-1 my-2 text-slate-300">${items.join("")}</ul>`);
+      continue;
+    }
+
+    // Ordered list
+    if (/^\d+\.\s/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
+        items.push(`<li class="text-slate-300 pl-2">${renderInline(lines[i].replace(/^\d+\.\s/, ""))}</li>`);
+        i++;
+      }
+      out.push(`<ol class="list-decimal list-inside space-y-1 my-2 text-slate-300">${items.join("")}</ol>`);
+      continue;
+    }
+
+    // Empty line
+    if (line.trim() === "") {
+      i++;
+      continue;
+    }
+
+    // Paragraph
+    out.push(`<p class="text-slate-300 my-2 leading-relaxed">${renderInline(line)}</p>`);
+    i++;
   }
-  if (depth === 3) {
-    return `<h3 class="md-h3 text-slate-300 font-medium mt-5 mb-2">${text}</h3>`;
-  }
-  return `<h${depth} class="text-slate-200 font-semibold mt-4 mb-2">${text}</h${depth}>`;
-};
 
-renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
-  const langClass = lang ? ` language-${lang}` : "";
-  const escapedText = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  return `<pre class="md-pre bg-slate-900 border border-slate-600 rounded p-3 font-mono text-sm overflow-x-auto my-3 relative group" data-code="${encodeURIComponent(text)}"><code class="text-green-400${langClass}">${escapedText}</code></pre>`;
-};
+  return out.join("\n");
+}
 
-renderer.codespan = ({ text }: { text: string }) => {
-  return `<code class="bg-slate-700 text-green-400 font-mono px-1.5 py-0.5 rounded text-sm">${text}</code>`;
-};
-
-renderer.table = ({
-  header,
-  rows,
-}: {
-  header: string;
-  rows: string[];
-}) => {
-  return `<div class="overflow-x-auto my-4"><table class="w-full text-sm border-collapse border border-slate-600"><thead class="bg-slate-800">${header}</thead><tbody>${rows.join("")}</tbody></table></div>`;
-};
-
-renderer.tablerow = ({ text }: { text: string }) => {
-  return `<tr class="border-b border-slate-700 hover:bg-slate-800/50">${text}</tr>`;
-};
-
-renderer.tablecell = ({
-  text,
-  tokens,
-  header,
-  align,
-}: {
-  text: string;
-  tokens?: unknown;
-  header: boolean;
-  align: string | null;
-}) => {
-  const tag = header ? "th" : "td";
-  const alignClass = align
-    ? align === "center"
-      ? " text-center"
-      : align === "right"
-      ? " text-right"
-      : ""
-    : "";
-  const baseClass = header
-    ? "text-slate-400 font-medium px-3 py-2 border-b border-slate-600"
-    : "text-slate-300 px-3 py-2";
-  return `<${tag} class="${baseClass}${alignClass}">${text}</${tag}>`;
-};
-
-renderer.paragraph = ({ text }: { text: string }) => {
-  return `<p class="text-slate-300 my-2 leading-relaxed">${text}</p>`;
-};
-
-renderer.list = ({ items, ordered }: { items: string; ordered: boolean }) => {
-  const tag = ordered ? "ol" : "ul";
-  const listClass = ordered
-    ? "list-decimal list-inside space-y-1 my-2 text-slate-300"
-    : "list-disc list-inside space-y-1 my-2 text-slate-300";
-  return `<${tag} class="${listClass}">${items}</${tag}>`;
-};
-
-renderer.listitem = ({ text }: { text: string }) => {
-  return `<li class="text-slate-300 pl-2">${text}</li>`;
-};
-
-renderer.blockquote = ({ text }: { text: string }) => {
-  return `<blockquote class="border-l-4 border-amber-500 pl-4 py-1 my-3 text-amber-300 bg-amber-500/5 rounded-r">${text}</blockquote>`;
-};
-
-marked.use({ renderer, async: false });
+function renderInline(text: string): string {
+  return text
+    // Bold
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
+    // Italic
+    .replace(/\*(.+?)\*/g, '<em class="italic">$1</em>')
+    // Inline code
+    .replace(/`([^`]+)`/g, '<code class="bg-slate-700 text-green-400 font-mono px-1.5 py-0.5 rounded text-sm">$1</code>')
+    // Links
+    .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" class="text-blue-400 underline" target="_blank">$1</a>');
+}
 
 // ─── CopyButton ───────────────────────────────────────────────────────────────
 
@@ -259,7 +307,7 @@ export default function RunbookViewer() {
 
   // 마크다운 + Step 버튼 오버레이 렌더링
   const renderContentWithStepButtons = () => {
-    const html = marked.parse(content) as string;
+    const html = renderMarkdown(content);
 
     // h2 태그에 step 버튼을 삽입하기 위해 DOM 파싱 후 처리
     return (
