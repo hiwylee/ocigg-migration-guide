@@ -10,6 +10,9 @@ from api.auth import get_current_user, UserInfo
 
 router = APIRouter()
 
+# Whitelist of columns that may be updated via PATCH /items/{id}
+_ALLOWED_UPDATE_COLS = {"status", "note", "assignee", "verified_at", "verified_by"}
+
 # ---------------------------------------------------------------------------
 # Domain definitions
 # ---------------------------------------------------------------------------
@@ -225,6 +228,7 @@ class ValidationItemResponse(BaseModel):
     item_name: str
     priority: str
     status: str
+    area: Optional[str] = None
     method: Optional[str] = None
     note: Optional[str] = None
     assignee: Optional[str] = None
@@ -288,14 +292,14 @@ async def seed_validation_data() -> None:
             items = _generate_dummy_items()
 
         await db.executemany(
-            "INSERT INTO validation_results (domain, item_no, item_name, priority, method, status) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO validation_results (domain, item_no, area, item_name, priority, method, status) VALUES (?,?,?,?,?,?,?)",
             items,
         )
         await db.commit()
 
 
 def _parse_xlsx(path: str) -> List[tuple]:
-    """Parse xlsx file and return list of (domain, item_no, item_name, priority, status)."""
+    """Parse xlsx, return (domain, item_no, area, item_name, priority, method, status)."""
     try:
         import openpyxl
     except ImportError:
@@ -304,76 +308,61 @@ def _parse_xlsx(path: str) -> List[tuple]:
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     result: List[tuple] = []
 
-    domain_map = {
-        "01": "01_GG_Process",
-        "gg": "01_GG_Process",
-        "goldengate": "01_GG_Process",
-        "02": "02_Static_Schema",
-        "static": "02_Static_Schema",
-        "schema": "02_Static_Schema",
-        "03": "03_Data_Validation",
-        "data": "03_Data_Validation",
-        "validation": "03_Data_Validation",
-        "04": "04_Special_Objects",
-        "special": "04_Special_Objects",
-        "objects": "04_Special_Objects",
-        "05": "05_Migration_Caution",
-        "caution": "05_Migration_Caution",
-        "migration": "05_Migration_Caution",
-    }
+    priority_map = {"상": "HIGH", "중": "MEDIUM", "하": "LOW"}
 
-    priority_map = {
-        "상": "HIGH", "high": "HIGH", "h": "HIGH",
-        "중": "MEDIUM", "medium": "MEDIUM", "m": "MEDIUM",
-        "하": "LOW", "low": "LOW", "l": "LOW",
-    }
+    domain_order = [
+        "01_GG_Process", "02_Static_Schema", "03_Data_Validation",
+        "04_Special_Objects", "05_Migration_Caution",
+    ]
 
     for sheet_name in wb.sheetnames:
-        # Determine domain from sheet name
-        domain = None
-        name_lower = sheet_name.lower().strip()
-        for key, val in domain_map.items():
-            if key in name_lower:
-                domain = val
-                break
-        if domain is None:
+        sn_clean = sheet_name.strip().lstrip("📋").strip()
+        if sn_clean not in domain_order:
             continue
+        domain = sn_clean
 
         ws = wb[sheet_name]
-        domain_counter: dict = {}
-        if domain not in domain_counter:
-            domain_counter[domain] = 0
+        rows = list(ws.iter_rows(values_only=True))
+        if len(rows) < 2:
+            continue
 
-        for i, row in enumerate(ws.iter_rows(values_only=True)):
-            if i == 0:
-                continue  # skip header
+        # Detect if col[2] is "단계" (04_Special_Objects structure)
+        header = rows[0]
+        has_step_col = (
+            header and len(header) > 2 and header[2] is not None
+            and "단계" in str(header[2])
+        )
+
+        item_no = 0
+        for row in rows[1:]:
             if not row or all(c is None for c in row):
                 continue
+            no_val = row[0]
+            if no_val is None:
+                continue
+            if not str(no_val).strip().isdigit():
+                continue  # skip section title rows like "▶ ..."
 
-            # Try to extract item_name and priority from row
-            item_name = None
-            priority = "MEDIUM"
+            area = str(row[1]).strip() if row[1] is not None else None
 
-            for cell in row:
-                if cell is None:
-                    continue
-                cell_str = str(cell).strip()
-                if not item_name and len(cell_str) > 2 and not cell_str.isdigit():
-                    item_name = cell_str
-                # Priority detection
-                pval = priority_map.get(cell_str.lower())
-                if pval:
-                    priority = pval
+            if has_step_col:
+                # 04_Special_Objects: NO | 객체유형 | 단계 | 검증항목 | 중요도
+                item_name = str(row[3]).strip() if len(row) > 3 and row[3] else ""
+                method = str(row[2]).strip() if len(row) > 2 and row[2] else None
+            else:
+                # standard: NO | 영역 | 검증항목 | 검증방법 | 중요도
+                item_name = str(row[2]).strip() if len(row) > 2 and row[2] else ""
+                method = str(row[3]).strip() if len(row) > 3 and row[3] else None
 
             if not item_name:
                 continue
 
-            domain_counter.setdefault(domain, 0)
-            domain_counter[domain] += 1
-            result.append((domain, domain_counter[domain], item_name, priority, None, "PENDING"))
+            priority_raw = str(row[4]).strip() if len(row) > 4 and row[4] is not None else "중"
+            priority = priority_map.get(priority_raw, "MEDIUM")
 
-    if not result:
-        return []
+            item_no += 1
+            result.append((domain, item_no, area or None, item_name, priority, method or None, "PENDING"))
+
     return result
 
 
@@ -382,7 +371,7 @@ def _generate_dummy_items() -> List[tuple]:
     result: List[tuple] = []
     for domain, items_list in DOMAIN_ITEMS.items():
         for idx, (name, priority, method) in enumerate(items_list, start=1):
-            result.append((domain, idx, name, priority, method, "PENDING"))
+            result.append((domain, idx, None, name, priority, method, "PENDING"))
     return result
 
 
@@ -526,6 +515,10 @@ async def update_item(
     if not fields:
         return _row_to_item(row)
 
+    col_names = {f.split("=")[0] for f in fields}
+    if not col_names.issubset(_ALLOWED_UPDATE_COLS):
+        raise HTTPException(status_code=400, detail="허용되지 않은 필드")
+
     params.append(item_id)
     await db.execute(f"UPDATE validation_results SET {', '.join(fields)} WHERE id=?", params)
 
@@ -610,19 +603,31 @@ async def manual_seed(
     await db.execute("DELETE FROM validation_results")
     await db.commit()
 
-    # Re-run seed
+    # Re-run seed (xlsx first, fallback to dummy)
+    xlsx_path = "/app/docs/00. validation_plan.xlsx"
+    items: List[tuple] = []
+    source = "dummy"
+    if os.path.exists(xlsx_path):
+        try:
+            items = _parse_xlsx(xlsx_path)
+            if items:
+                source = "xlsx"
+        except Exception:
+            items = []
+    if not items:
+        items = _generate_dummy_items()
+
     from core.db import get_db_path
     import aiosqlite as _aio
     async with _aio.connect(get_db_path()) as db2:
         db2.row_factory = _aio.Row
-        items = _generate_dummy_items()
         await db2.executemany(
-            "INSERT INTO validation_results (domain, item_no, item_name, priority, method, status) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO validation_results (domain, item_no, area, item_name, priority, method, status) VALUES (?,?,?,?,?,?,?)",
             items,
         )
         await db2.commit()
 
-    return {"message": f"재시드 완료: {len(items)}개 항목"}
+    return {"message": f"재시드 완료: {len(items)}개 항목 (소스: {source})"}
 
 
 # ---------------------------------------------------------------------------
@@ -630,6 +635,7 @@ async def manual_seed(
 # ---------------------------------------------------------------------------
 
 def _row_to_item(row: aiosqlite.Row) -> ValidationItemResponse:
+    keys = row.keys()
     return ValidationItemResponse(
         id=row["id"],
         domain=row["domain"],
@@ -637,7 +643,8 @@ def _row_to_item(row: aiosqlite.Row) -> ValidationItemResponse:
         item_name=row["item_name"],
         priority=row["priority"],
         status=row["status"],
-        method=row["method"] if "method" in row.keys() else None,
+        area=row["area"] if "area" in keys else None,
+        method=row["method"] if "method" in keys else None,
         note=row["note"],
         assignee=row["assignee"],
         verified_at=row["verified_at"],

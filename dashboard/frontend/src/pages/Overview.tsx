@@ -9,6 +9,7 @@ import {
 import api from "../hooks/useApi";
 import type { PhaseStatus, HealthResult, GoNogo } from "../types";
 import { cn } from "../lib/utils";
+import { CONN_BADGE, CONN_LABEL } from "../lib/styles";
 
 interface PhaseRow {
   phase_no: number;
@@ -36,18 +37,6 @@ function PhaseIcon({ status }: { status: PhaseStatus }) {
   return <Circle className="w-4 h-4 text-slate-600 shrink-0" />;
 }
 
-const CONN_BADGE: Record<string, string> = {
-  ok:             "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40",
-  error:          "bg-red-500/20 text-red-400 border border-red-500/40",
-  not_configured: "bg-slate-700 text-slate-400 border border-slate-600",
-  checking:       "bg-amber-500/20 text-amber-400 border border-amber-500/40",
-};
-const CONN_LABEL: Record<string, string> = {
-  ok:             "연결됨",
-  error:          "오류",
-  not_configured: "미설정",
-  checking:       "확인 중",
-};
 
 const GONOGO_STYLE: Record<GoNogo, string> = {
   GO:             "text-emerald-400",
@@ -81,7 +70,8 @@ export default function Overview() {
           }))
         );
       })
-      .catch(() => {
+      .catch((err) => {
+        console.warn("Overview: failed to load config", err);
         setPhases(
           PHASE_META.map((m, i) => ({
             phase_no: i,

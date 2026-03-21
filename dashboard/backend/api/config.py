@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import aiosqlite
 import httpx
@@ -77,7 +77,7 @@ async def update_config(
     if row["locked"]:
         raise HTTPException(status_code=403, detail=f"키 '{key}'는 잠금 상태입니다")
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     await db.execute(
         "UPDATE config_registry SET value=?, changed_by=?, changed_at=? WHERE key=?",
         (body.value, current_user.username, now, key),

@@ -3,13 +3,11 @@ from typing import List, Optional
 from datetime import datetime
 import aiosqlite
 from pydantic import BaseModel
-from passlib.context import CryptContext
 
-from core.db import get_db
+from core.db import get_db, pwd_context
 from api.auth import get_current_user, UserInfo
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 VALID_ROLES = {"admin", "migration_leader", "src_dba", "tgt_dba", "gg_operator", "viewer"}
 

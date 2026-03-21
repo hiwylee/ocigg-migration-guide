@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import aiosqlite
 from pydantic import BaseModel
 
@@ -39,7 +39,7 @@ async def _get_config(db: aiosqlite.Connection, key: str) -> Optional[str]:
 
 
 async def _set_config(db: aiosqlite.Connection, key: str, value: str, actor: str) -> None:
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     await db.execute(
         "INSERT OR REPLACE INTO config_registry (key, value, locked, changed_by, changed_at) "
         "VALUES (?, ?, 0, ?, ?)",
@@ -92,7 +92,7 @@ async def start_cutover(
     existing = await _get_config(db, "CUTOVER_STARTED_AT")
     if existing:
         raise HTTPException(status_code=409, detail="Cut-over가 이미 시작되었습니다")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     await _set_config(db, "CUTOVER_STARTED_AT", now, current_user.username)
     await db.commit()
 
@@ -115,7 +115,7 @@ async def complete_step(
     valid_ids = {s["step_id"] for s in CUTOVER_STEPS}
     if step_id not in valid_ids:
         raise HTTPException(status_code=404, detail=f"단계 '{step_id}'를 찾을 수 없습니다")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     await db.execute(
         "INSERT INTO step_progress (filename, step_id, completed, completed_by, completed_at) "
         "VALUES ('cutover', ?, 1, ?, ?) "
@@ -149,7 +149,7 @@ async def start_rollback(
 ):
     if current_user.role not in ("admin", "migration_leader"):
         raise HTTPException(status_code=403, detail="admin 또는 migration_leader 권한 필요")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     await _set_config(db, "ROLLBACK_STARTED_AT", now, current_user.username)
     await _set_config(db, "ROLLBACK_REASON", body.reason, current_user.username)
     await db.commit()

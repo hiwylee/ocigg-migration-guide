@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Clock, Download, CheckCircle2, RefreshCw } from "lucide-react";
 import api from "../hooks/useApi";
+import { useFetch } from "../hooks/useFetch";
 import { cn } from "../lib/utils";
 
 interface EventItem {
@@ -35,30 +36,30 @@ function typeBadge(type: string) {
   );
 }
 
+const EVENT_TYPES = [
+  "", "CUTOVER_START", "ROLLBACK_START", "SCRIPT_RUN", "SCRIPT_DONE",
+  "SCRIPT_FAIL", "VALIDATION_UPDATE", "GG_ABEND", "SYSTEM"
+];
+
 export default function EventLog() {
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate] = useState(today);
   const [eventType, setEventType] = useState("");
-  const [events, setEvents] = useState<EventItem[]>([]);
-  const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
+  const { data: events, loading, refresh } = useFetch<EventItem[]>(
+    () => {
       const params: Record<string, string> = { limit: "200", date };
       if (eventType) params.event_type = eventType;
-      const r = await api.get<EventItem[]>("/events", { params });
-      setEvents(r.data);
-    } finally {
-      setLoading(false);
-    }
-  }, [date, eventType]);
+      return api.get<EventItem[]>("/events", { params }).then((r) => r.data);
+    },
+    [date, eventType],
+  );
 
-  useEffect(() => { load(); }, [load]);
+  const items = events ?? [];
 
   const confirm = async (id: number) => {
     await api.post(`/events/${id}/confirm`);
-    await load();
+    refresh();
   };
 
   const exportPdf = async () => {
@@ -68,7 +69,7 @@ export default function EventLog() {
     doc.text(`Migration Event Log — ${date}`, 15, 15);
     doc.setFontSize(9);
     let y = 25;
-    for (const ev of [...events].reverse()) {
+    for (const ev of [...items].reverse()) {
       const time = ev.created_at.slice(11, 19);
       const line = `[${time}] [${ev.event_type}] ${ev.message}${ev.actor ? " (" + ev.actor + ")" : ""}`;
       const lines = doc.splitTextToSize(line, 180);
@@ -82,21 +83,16 @@ export default function EventLog() {
     doc.save(`event_log_${date}.pdf`);
   };
 
-  const EVENT_TYPES = [
-    "", "CUTOVER_START", "ROLLBACK_START", "SCRIPT_RUN", "SCRIPT_DONE",
-    "SCRIPT_FAIL", "VALIDATION_UPDATE", "GG_ABEND", "SYSTEM"
-  ];
-
   return (
     <div className="p-6 space-y-4 max-w-5xl">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Clock className="w-6 h-6 text-blue-400" />
           <h1 className="text-xl font-bold text-white">Event Log</h1>
-          <span className="text-slate-400 text-sm">{events.length}건</span>
+          <span className="text-slate-400 text-sm">{items.length}건</span>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={load} className="p-2 text-slate-400 hover:text-white">
+          <button onClick={refresh} className="p-2 text-slate-400 hover:text-white">
             <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
           </button>
           <button
@@ -129,14 +125,14 @@ export default function EventLog() {
       </div>
 
       {/* Timeline */}
-      {events.length === 0 ? (
+      {items.length === 0 ? (
         <div className="text-center py-16 text-slate-500">이벤트가 없습니다</div>
       ) : (
         <div className="relative">
           {/* vertical line */}
           <div className="absolute left-[7.5rem] top-0 bottom-0 w-px bg-slate-700" />
           <ul className="space-y-0">
-            {[...events].reverse().map((ev) => (
+            {[...items].reverse().map((ev) => (
               <li key={ev.id} className="flex gap-4 py-2">
                 <div className="w-28 text-right shrink-0">
                   <p className="text-slate-400 text-xs font-mono">{ev.created_at.slice(11, 19)}</p>

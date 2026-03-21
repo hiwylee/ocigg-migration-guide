@@ -131,8 +131,8 @@ export default function DBStatus() {
       const res = await api.get<ParamRow[]>("/db/compare");
       setParams(res.data);
       setLastChecked(new Date().toISOString());
-    } catch {
-      // keep previous state
+    } catch (err) {
+      console.warn("DBStatus: failed to fetch params", err);
     } finally {
       setParamsLoading(false);
     }
@@ -143,8 +143,8 @@ export default function DBStatus() {
     try {
       const res = await api.get<SessionCount>("/db/session-count");
       setSessions(res.data);
-    } catch {
-      // keep previous state
+    } catch (err) {
+      console.warn("DBStatus: failed to fetch sessions", err);
     } finally {
       setSessionsLoading(false);
     }
@@ -155,8 +155,8 @@ export default function DBStatus() {
     try {
       const res = await api.get<SchemaDiffRow[]>("/db/schema-diff");
       setSchemaDiff(res.data);
-    } catch {
-      // keep previous state
+    } catch (err) {
+      console.warn("DBStatus: failed to fetch schema diff", err);
     } finally {
       setSchemaLoading(false);
     }

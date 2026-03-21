@@ -3,7 +3,7 @@ import hashlib
 import os
 import signal
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -124,7 +124,7 @@ async def _log_event(
     script_path: str,
     actor: str,
 ) -> None:
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     await db.execute(
         "INSERT INTO event_log (event_type, message, related_script, actor, created_at) "
         "VALUES (?,?,?,?,?)",
@@ -137,28 +137,35 @@ async def _log_event(
 # WebSocket용 JWT 검증 헬퍼 (Depends 미사용)
 # ---------------------------------------------------------------------------
 
-async def _ws_get_user(websocket: WebSocket, db: aiosqlite.Connection) -> Optional[UserInfo]:
-    """WebSocket 연결에서 Authorization 헤더 또는 token 쿼리 파라미터로 사용자 확인."""
+async def _ws_get_user(
+    websocket: WebSocket,
+    db: aiosqlite.Connection,
+    msg_token: Optional[str] = None,
+) -> Optional[UserInfo]:
+    """WebSocket 연결에서 JWT를 검증하고 사용자 정보를 반환한다.
+
+    토큰 우선순위:
+      1) 첫 번째 JSON 메시지의 ``token`` 필드 (msg_token)
+      2) Authorization: Bearer <token> 헤더
+    URL 쿼리 파라미터로 토큰을 받지 않으므로 서버 로그 노출을 방지한다.
+    """
     from jose import JWTError, jwt
     from core.env_loader import settings
 
-    token: Optional[str] = None
+    token: Optional[str] = msg_token
 
-    # 1) Authorization: Bearer <token>
-    auth_header = websocket.headers.get("authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-
-    # 2) ?token=<token> 쿼리 파라미터
+    # Fallback: Authorization header (e.g. native WebSocket clients)
     if not token:
-        token = websocket.query_params.get("token")
+        auth_header = websocket.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
 
     if not token:
         return None
 
     try:
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        username: Optional[str] = payload.get("sub")
+        jwt_payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        username: Optional[str] = jwt_payload.get("sub")
         if not username:
             return None
     except JWTError:
@@ -306,7 +313,7 @@ async def kill_script(
     except (ProcessLookupError, PermissionError) as e:
         raise HTTPException(status_code=500, detail=f"프로세스 종료 실패: {e}")
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     await db.execute(
         "UPDATE script_runs SET status='killed', finished_at=? "
         "WHERE script_path=? AND status='running'",
@@ -330,14 +337,24 @@ async def run_script_ws(
     async with aiosqlite.connect(get_db_path()) as db:
         db.row_factory = aiosqlite.Row
 
-        # ---- 1) 인증 ----
-        user = await _ws_get_user(websocket, db)
+        # ---- 1) 첫 메시지 수신 (토큰 + 실행 페이로드 포함) ----
+        # Token is sent as the first JSON message to avoid JWT exposure in server logs.
+        try:
+            import json
+            raw = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
+            first_msg: dict = json.loads(raw)
+        except (asyncio.TimeoutError, Exception):
+            first_msg = {}
+
+        # ---- 2) 인증 ----
+        msg_token: Optional[str] = first_msg.get("token") or None
+        user = await _ws_get_user(websocket, db, msg_token=msg_token)
         if not user:
             await websocket.send_text("[SYSTEM] 인증 실패: 유효한 토큰이 필요합니다")
             await websocket.close(code=4001)
             return
 
-        # ---- 2) 스크립트 존재 확인 ----
+        # ---- 3) 스크립트 존재 확인 ----
         path = _id_to_path(script_id)
         if not path:
             await websocket.send_text("[SYSTEM] 오류: 스크립트를 찾을 수 없습니다")
@@ -347,20 +364,13 @@ async def run_script_ws(
         meta = SCRIPT_METADATA[path]
         risk = meta["risk"]
 
-        # ---- 3) 동시 실행 방지 ----
+        # ---- 4) 동시 실행 방지 ----
         if path in _running:
             await websocket.send_text(f"[SYSTEM] 오류: 이미 실행 중입니다 (PID={_running[path]})")
             await websocket.close(code=4009)
             return
 
-        # ---- 4) 클라이언트 페이로드 수신 ----
-        try:
-            raw = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
-            import json
-            payload: dict = json.loads(raw)
-        except (asyncio.TimeoutError, Exception):
-            payload = {}
-
+        payload = first_msg
         reason: str = payload.get("reason", "").strip()
         confirm_token: str = payload.get("confirm_token", "").strip()
 
@@ -406,7 +416,7 @@ async def run_script_ws(
             return
 
         # ---- 8) script_runs에 실행 시작 기록 ----
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         cur = await db.execute(
             "INSERT INTO script_runs (script_path, risk_level, started_at, status, run_by, reason) "
             "VALUES (?,?,?,?,?,?)",
@@ -474,7 +484,7 @@ async def run_script_ws(
             _running.pop(path, None)
 
         # ---- 10) 실행 결과 기록 ----
-        finished = datetime.utcnow().isoformat()
+        finished = datetime.now(timezone.utc).isoformat()
         if exit_code is None:
             status = "killed"
         elif exit_code == 0:

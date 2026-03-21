@@ -17,6 +17,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+# frontend src/lib is NOT a venv — track it
+!dashboard/frontend/src/lib/
 wheels/
 *.whl
 .env

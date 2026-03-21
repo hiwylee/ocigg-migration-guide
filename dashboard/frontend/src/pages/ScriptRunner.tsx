@@ -218,8 +218,8 @@ export default function ScriptRunner() {
 
       const res = await api.get<Script[]>("/scripts", { params });
       setScripts(res.data);
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn("ScriptRunner: failed to load scripts", err);
     } finally {
       setLoading(false);
     }

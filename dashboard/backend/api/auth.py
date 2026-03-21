@@ -1,18 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from pydantic import BaseModel
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import aiosqlite
 
 from core.env_loader import settings
-from core.db import get_db
+from core.db import get_db, pwd_context
 
 router = APIRouter()
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
@@ -29,7 +26,7 @@ class UserInfo(BaseModel):
 
 
 def create_access_token(username: str, role: str) -> str:
-    expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode(
         {"sub": username, "role": role, "exp": expire},
         settings.JWT_SECRET_KEY,
@@ -76,7 +73,7 @@ async def login(
     if not row or not pwd_context.verify(form.password, row["hashed_password"]):
         raise HTTPException(status_code=401, detail="사용자명 또는 비밀번호가 올바르지 않습니다")
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     await db.execute(
         "UPDATE users SET last_login=? WHERE username=?", (now, form.username)
     )

@@ -78,14 +78,14 @@ export default function LogStreamer({
     // token은 authStore에서 직접 가져오기
     const { useAuthStore } = require("../store/authStore");
     const token: string | null = useAuthStore.getState().token;
-    const wsFullUrl = token ? `${wsUrl}?token=${encodeURIComponent(token)}` : wsUrl;
 
-    const ws = new WebSocket(wsFullUrl);
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
       setStatus("running");
-      ws.send(JSON.stringify(payload));
+      // Send token as first message to avoid exposing JWT in server logs via URL.
+      ws.send(JSON.stringify({ token: token ?? "", ...payload }));
     };
 
     ws.onmessage = (ev: MessageEvent) => {

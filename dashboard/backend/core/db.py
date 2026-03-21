@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS validation_results (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     domain          TEXT    NOT NULL,
     item_no         INTEGER NOT NULL,
+    area TEXT,
     item_name       TEXT    NOT NULL,
     priority        TEXT    NOT NULL DEFAULT 'MEDIUM',
     status          TEXT    NOT NULL DEFAULT 'PENDING',
@@ -149,6 +150,10 @@ async def init_db(admin_username: str, admin_password: str) -> None:
         cols = [r[1] for r in await (await db.execute("PRAGMA table_info(validation_results)")).fetchall()]
         if "method" not in cols:
             await db.execute("ALTER TABLE validation_results ADD COLUMN method TEXT")
+            await db.commit()
+
+        if "area" not in cols:
+            await db.execute("ALTER TABLE validation_results ADD COLUMN area TEXT")
             await db.commit()
 
         for phase_no, phase_name, status in PHASE_SEED:

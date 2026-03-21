@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import aiosqlite
 from pydantic import BaseModel
 
@@ -47,7 +47,7 @@ async def confirm_alert(
     ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="알림을 찾을 수 없습니다")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     await db.execute(
         "UPDATE alerts SET confirmed_by=?, confirmed_at=? WHERE id=?",
         (current_user.username, now, alert_id),

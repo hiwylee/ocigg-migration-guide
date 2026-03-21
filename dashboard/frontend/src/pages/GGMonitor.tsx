@@ -9,6 +9,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import { STATUS_BADGE } from "../lib/styles";
 import { useAuthStore } from "../store/authStore";
 import api from "../hooks/useApi";
 import LagChart, { type LagPoint } from "../components/LagChart";
@@ -63,26 +64,10 @@ const PROCESSES = ["EXT1", "PUMP1", "REP1"] as const;
 type ProcessName = typeof PROCESSES[number];
 
 const STATUS_STYLES: Record<GGStatus, { badge: string; dot: string; text: string }> = {
-  RUNNING: {
-    badge: "bg-emerald-500/20 border border-emerald-500/40 text-emerald-400",
-    dot:   "bg-emerald-400",
-    text:  "text-emerald-400",
-  },
-  STOPPED: {
-    badge: "bg-amber-500/20 border border-amber-500/40 text-amber-400",
-    dot:   "bg-amber-400",
-    text:  "text-amber-400",
-  },
-  ABEND: {
-    badge: "bg-red-500/20 border border-red-500/40 text-red-400",
-    dot:   "bg-red-400 animate-pulse",
-    text:  "text-red-400",
-  },
-  UNKNOWN: {
-    badge: "bg-slate-700 border border-slate-600 text-slate-400",
-    dot:   "bg-slate-500",
-    text:  "text-slate-400",
-  },
+  RUNNING: { badge: STATUS_BADGE.RUNNING, dot: "bg-emerald-400",            text: "text-emerald-400" },
+  STOPPED: { badge: STATUS_BADGE.STOPPED, dot: "bg-amber-400",              text: "text-amber-400"   },
+  ABEND:   { badge: STATUS_BADGE.ABEND,   dot: "bg-red-400 animate-pulse",  text: "text-red-400"     },
+  UNKNOWN: { badge: STATUS_BADGE.UNKNOWN, dot: "bg-slate-500",              text: "text-slate-400"   },
 };
 
 const OPERATOR_ROLES = new Set(["gg_operator", "admin", "migration_leader"]);
@@ -246,7 +231,8 @@ export default function GGMonitor() {
       const res = await api.get<StatusResponse>("/gg/status");
       setConfigured(res.data.configured);
       setProcesses(res.data.processes ?? []);
-    } catch {
+    } catch (err) {
+      console.warn("GGMonitor: failed to fetch status", err);
       setConfigured(false);
     } finally {
       setStatusLoading(false);
@@ -273,8 +259,8 @@ export default function GGMonitor() {
         }
       }
       setLagData(next);
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn("GGMonitor: failed to fetch lag history", err);
     } finally {
       setLagLoading(false);
     }
@@ -285,8 +271,8 @@ export default function GGMonitor() {
     try {
       const res = await api.get<LagStableResponse>("/gg/lag-stable");
       setStableInfo(res.data);
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn("GGMonitor: failed to fetch stable info", err);
     }
   }, []);
 
@@ -297,8 +283,8 @@ export default function GGMonitor() {
       if (res.data.configured !== false) {
         setDiscardCount(res.data.count);
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn("GGMonitor: failed to fetch discard count", err);
     }
   }, []);
 

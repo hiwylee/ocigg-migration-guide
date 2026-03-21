@@ -1,5 +1,9 @@
+import logging
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
+
+_log = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -66,6 +70,20 @@ class Settings(BaseSettings):
     LAG_WARNING_SECONDS: int = 15
     LAG_CRITICAL_SECONDS: int = 30
     DB_PATH: str = "/app/db/dashboard.db"
+
+    @model_validator(mode="after")
+    def _warn_insecure_defaults(self) -> "Settings":
+        if self.JWT_SECRET_KEY == "change-me":
+            _log.warning(
+                "SECURITY WARNING: JWT_SECRET_KEY is set to the insecure default. "
+                "Set the JWT_SECRET_KEY environment variable before deploying."
+            )
+        if self.ADMIN_PASSWORD == "change-me":
+            _log.warning(
+                "SECURITY WARNING: ADMIN_PASSWORD is set to the insecure default. "
+                "Set the ADMIN_PASSWORD environment variable before deploying."
+            )
+        return self
 
 
 settings = Settings()

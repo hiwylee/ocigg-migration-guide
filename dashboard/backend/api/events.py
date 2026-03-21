@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import aiosqlite
 
 from core.db import get_db
@@ -47,7 +47,7 @@ async def create_event(
     db: aiosqlite.Connection = Depends(get_db),
     current_user: UserInfo = Depends(get_current_user),
 ):
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     cur = await db.execute(
         "INSERT INTO event_log "
         "(event_type, message, related_script, related_item, actor, created_at) "
@@ -79,7 +79,7 @@ async def confirm_event(
     ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     await db.execute(
         "UPDATE event_log SET confirmed_by=?, confirmed_at=? WHERE id=?",
         (current_user.username, now, event_id),
