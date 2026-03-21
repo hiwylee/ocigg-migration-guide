@@ -2,6 +2,7 @@
 
 > **프로젝트**: AWS RDS (Oracle SE) → OCI DBCS (Oracle SE) 온라인 마이그레이션
 > **적용 범위**: Phase 3 (OCI GG 구성) + Phase 4 (초기 데이터 적재) + Phase 5 (델타 동기화)
+> **실행 환경**: [소스] / [타겟] / [GG]
 
 ---
 

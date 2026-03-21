@@ -2,6 +2,7 @@
 
 > **프로젝트**: AWS RDS (Oracle SE) -> OCI DBCS (Oracle SE) 온라인 마이그레이션
 > **적용 범위**: Phase 6 (검증) + Phase 7 (Cut-over) + Phase 8 (안정화)
+> **실행 환경**: [소스] / [타겟] / [GG]
 > **참조 스크립트**: `scripts/03_validation/step01 ~ step12`
 
 ---
